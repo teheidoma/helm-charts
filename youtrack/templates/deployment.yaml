@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "youtrack.fullname" . }}
+  labels:
+    {{- include "youtrack.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "youtrack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "youtrack.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "youtrack.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 240
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 240
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /opt/youtrack/data
+              name: data
+            - mountPath: /opt/youtrack/logs
+              name: logs
+            - mountPath: /opt/youtrack/conf
+              name: conf
+            - mountPath: /opt/youtrack/backups
+              name: backups
+      initContainers:
+        - name: configure
+          securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "configure"
+            - "-J-Ddisable.configuration.wizard.on.clean.install=true"
+            - "--base-url=https://{{ (index .Values.ingress.hosts 0).host }}"
+          volumeMounts:
+            - mountPath: /opt/youtrack/data
+              name: data
+            - mountPath: /opt/youtrack/logs
+              name: logs
+            - mountPath: /opt/youtrack/conf
+              name: conf
+            - mountPath: /opt/youtrack/backups
+              name: backups
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "youtrack.fullname" . }}-data-pv
+        - name: conf
+          persistentVolumeClaim:
+            claimName: {{ include "youtrack.fullname" . }}-conf-pv
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "youtrack.fullname" . }}-logs-pv
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ include "youtrack.fullname" . }}-backups-pv
